@@ -20,6 +20,8 @@ from pytorch_lightning.utilities import rank_zero_info
 from ldm.data.base import Txt2ImgIterableBaseDataset
 from ldm.util import instantiate_from_config
 
+import joblib
+from torchmetrics import FID
 
 def get_parser(**parser_kwargs):
     def str2bool(v):
@@ -352,6 +354,32 @@ class ImageLogger(Callback):
             with torch.no_grad():
                 images = pl_module.log_images(batch, split=split, **self.log_images_kwargs)
 
+            fid = FID().cuda(device=torch.cuda.current_device())
+            fid.update(((images["inputs"]+ 1.0) / 2.0 * 255).type(torch.uint8), real=True)
+            fid.update(((images["samples_x0_quantized"]+ 1.0) / 2.0 * 255).type(torch.uint8), real=False)
+            pl_module.logger.experiment.add_scalar(
+                f'{split}/fid_samples_quantized', fid.compute(),
+                global_step=pl_module.global_step)
+
+            fid = FID().cuda(device=torch.cuda.current_device())
+            fid.update(((images["inputs"]+ 1.0) / 2.0 * 255).type(torch.uint8), real=True)
+            fid.update(((images["samples"]+ 1.0) / 2.0 * 255).type(torch.uint8), real=False)
+            pl_module.logger.experiment.add_scalar(
+                f'{split}/fid_samples', fid.compute(),
+                global_step=pl_module.global_step)
+
+            # from torchmetrics.functional.multimodal import clip_score
+            # from functools import partial
+
+            # clip_score_fn = partial(clip_score, model_name_or_path="openai/clip-vit-base-patch16")
+
+            # def calculate_clip_score(images, prompts):
+            #     images_int = (images * 255).astype("uint8")
+            #     clip_score = clip_score_fn(torch.from_numpy(images_int).permute(0, 3, 1, 2), prompts).detach()
+            #     return round(float(clip_score), 4)
+
+            # sd_clip_score = calculate_clip_score(images, prompts)
+
             for k in images:
                 N = min(images[k].shape[0], self.max_images)
                 images[k] = images[k][:N]
@@ -363,6 +391,29 @@ class ImageLogger(Callback):
             self.log_local(pl_module.logger.save_dir, split, images,
                            pl_module.global_step, pl_module.current_epoch, batch_idx)
 
+            root = os.path.join(pl_module.logger.save_dir, "images", split)
+            filename = "condition_gs-{:06}_e-{:06}_b-{:06}.csv".format(
+                pl_module.global_step,
+                pl_module.current_epoch,
+                batch_idx)
+            lbl_val=batch["mixed"][1].detach().cpu().numpy()
+            w_val=batch["mixed"][2].detach().cpu().numpy()
+            t_val=batch["mixed"][3].detach().cpu().numpy()
+            lbl_val=lbl_val.reshape((lbl_val.shape[0]*lbl_val.shape[1]*lbl_val.shape[2],-1))
+            w_val=w_val.reshape((w_val.shape[0]*w_val.shape[1]*w_val.shape[2],-1))
+            t_val=t_val.reshape((t_val.shape[0]*t_val.shape[1],-1))
+            phase="val" if split!="train" else "train"
+            path_scaler=""
+            lbl_scaler=joblib.load(os.path.join(path_scaler, "flow_scaler_"+phase))
+            w_scaler=joblib.load(os.path.join(path_scaler, "weather_scaler_"+phase))
+            t_scaler=joblib.load(os.path.join(path_scaler, "time_scaler_"+phase))
+            t_val=t_scaler.inverse_transform(t_val).flatten()
+            time_list=[np.datetime64(int(cur), "s") for cur in t_val]
+            with open(os.path.join(root,filename),"w") as f:
+                f.write("label:{}\n".format(lbl_scaler.inverse_transform(lbl_val)))
+                f.write("weather:{}\n".format(w_scaler.inverse_transform(w_val)))
+                f.write("time:{}\n".format(time_list))
+
             logger_log_images = self.logger_log_images.get(logger, lambda *args, **kwargs: None)
             logger_log_images(pl_module, images, pl_module.global_step, split)
 
@@ -372,7 +423,7 @@ class ImageLogger(Callback):
     def check_frequency(self, check_idx):
         if ((check_idx % self.batch_freq) == 0 or (check_idx in self.log_steps)) and (
                 check_idx > 0 or self.log_first_step):
-            try:
+            try: 
                 self.log_steps.pop(0)
             except IndexError as e:
                 print(e)
@@ -390,6 +441,16 @@ class ImageLogger(Callback):
         if hasattr(pl_module, 'calibrate_grad_norm'):
             if (pl_module.calibrate_grad_norm and batch_idx % 25 == 0) and batch_idx > 0:
                 self.log_gradients(trainer, pl_module, batch_idx=batch_idx)
+
+    # def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx):
+    #     print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@","valend")
+    #     # if not self.disabled and pl_module.global_step > 0:
+    #     print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@","valendlog")
+    #     self.log_img(pl_module, batch, batch_idx, split="val")
+    #     print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@","valendlog")
+    #     if hasattr(pl_module, 'calibrate_grad_norm'):
+    #         if (pl_module.calibrate_grad_norm and batch_idx % 25 == 0) and batch_idx > 0:
+    #             self.log_gradients(trainer, pl_module, batch_idx=batch_idx)
 
 
 class CUDACallback(Callback):
@@ -722,6 +783,10 @@ if __name__ == "__main__":
                 raise
         if not opt.no_test and not trainer.interrupted:
             trainer.test(model, data)
+        # print("**************start testing**************")
+        # # trainer.test(model, data)
+        # # trainer.test(model, data, ckpt_path="/data/nak168/spatial_temporal/stream_img/latent-diffusion/logs/2023-12-11T17-12-13_stdiff_weather/checkpoints/last.ckpt")
+        # trainer.validate(model,data)
     except Exception:
         if opt.debug and trainer.global_rank == 0:
             try:
