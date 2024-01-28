@@ -305,10 +305,10 @@ class WeatherLSTM(nn.Module):
         out, _ = self.lstm(weather, (h0, c0))
 
         # Decode the hidden state of the last time step
-        if phase == "train":
-            out = self.fc(out.reshape(out.shape[0] * out.shape[1], -1))
-        else:
-            out = self.fc(out[:, -1, :])
+        # if phase == "train":
+        out = self.fc(out.reshape(out.shape[0] * out.shape[1], -1))
+        # else:
+        #     out = self.fc(out[:, -1, :])
         return out
 
 
@@ -323,11 +323,14 @@ class TimeEmbeddings(nn.Module):
         k = 1e-2  # Set the scaling constant
 
         # Compute the positional embeddings
-        c_d = torch.sin(2 * math.pi * f0 * time)
-        c_y = torch.cos(2 * math.pi * f0 * time)
+        c_d1 = torch.sin(2 * math.pi * f0 * time)
+        c_d2 = torch.cos(2 * math.pi * f0 * time)
+
+        c_y1 = torch.sin(2 * math.pi * f1 * time)
+        c_y2 = torch.cos(2 * math.pi * f1 * time)
 
         # Combine the positional embeddings
-        embeddings = torch.stack((c_d, c_y), dim=1)
+        embeddings = torch.stack((c_d1,c_d2,c_y1,c_y2), dim=1)
 
         return embeddings
 
@@ -371,8 +374,7 @@ class SelfAttention(nn.Module):
         out = self.gamma * out + x
         out=self.out_conv(out)
         return out
-        
-        
+
 class ConvBlock(nn.Module):
     def __init__(self, in_ch, out_ch):
         super().__init__()
@@ -414,7 +416,7 @@ class UnetCond(nn.Module):
         resnet_block_groups = 8,
         w_dim=16,
         f_dim=1,
-        t_dim=4,
+        t_dim=6,
         hidden_dim=64,
         num_layers=1,
         num_ws=1,
@@ -500,7 +502,8 @@ class UnetCond(nn.Module):
         self.scaled_styles = CondScale(None, t_dim, mid_dim, cond_args)
 
     def forward(self, mixed, phase="train"):
-        self.device="cuda:0"
+        # self.device="cuda:0"
+        # img, flow, weather, time, label, _ = mixed
         img, flow, weather, time = mixed
         img=img.squeeze(0).to(self.device)
         weather=weather.squeeze(0).float().to(self.device)
