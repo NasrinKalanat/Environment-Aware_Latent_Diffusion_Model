@@ -785,11 +785,15 @@ if __name__ == "__main__":
         if not os.path.exists(os.path.join(logdir, "third_stage_data_ar")):
             print("**************third_stage_data**************")
             image_logger = ImageLogger(**default_callbacks_cfg['image_logger']['params'])
-            cur = "third_stage_data_ar"
-            loader_dct={"test":data.test_dataloader()}
-            # loader_dct={"train":data.train_dataloader(), "test":data.test_dataloader()}
+            cur = "third_stage_data"
+            # loader_dct={"test":data.test_dataloader()}
+            loader_dct={"train":data.train_dataloader(), "test":data.test_dataloader()}
             for split, loader in loader_dct.items():
-                split = cur+"/"+split
+                if split == "test":
+                    fol_name = "ar"
+                    split = cur + f"_{fol_name}/" + split
+                else:
+                    split = cur + "/" + split
                 for batch_idx, batch in enumerate(loader):
                     model.eval()
                     with torch.no_grad():

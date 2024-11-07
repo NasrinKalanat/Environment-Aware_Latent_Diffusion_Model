@@ -996,25 +996,19 @@ class ThirdStageModel(nn.Module):
         # config = OmegaConf.merge(*configs, cli)
         batch_frequency=16
         max_images=32
-        fol_name = "ar"
         root = os.path.join(logdir, "third_stage")
         self.ckptdir = os.path.join(root, "checkpoints")
         root_data = os.path.join(logdir, "third_stage_data")
 
         image_logger = ImageLogger(root, batch_frequency=batch_frequency, max_images=max_images)
 
-        # print("********** test **********")
-        # data_ft = ThirdStageDataset(root_data, split="test")
-        # loader = torch.utils.data.DataLoader(data_ft, batch_size=4, shuffle=False)
-        # self.test(loader, image_logger)
-
-        # print("********** train **********")
-        # data_ft = ThirdStageDataset(root_data, split="train")
-        # loader = torch.utils.data.DataLoader(data_ft, batch_size=4, shuffle=True)
-        # self.train(loader, image_logger)
+        print("********** train **********")
+        data_ft = ThirdStageDataset(root_data, split="train")
+        loader = torch.utils.data.DataLoader(data_ft, batch_size=4, shuffle=True)
+        self.train(loader, image_logger)
 
         print("********** test **********")
-
+        fol_name = "ar"
         root_data = os.path.join(logdir, f"third_stage_data_{fol_name}")
 
         data_ft = ThirdStageDataset(root_data, split="test")

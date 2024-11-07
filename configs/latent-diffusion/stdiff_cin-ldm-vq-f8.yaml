@@ -90,24 +90,24 @@ data:
       params:
         batch_size: 1
         len_seq: 1
-        path: /home/nkalanat/sensei-fs-3-link/data/fpe-westbrook/
-        path_weather: /home/nkalanat/sensei-fs-3-link/data/
+        path: /data/nak168/spatial_temporal/stream_img/data/fpe-westbrook/
+        path_weather: /data/nak168/spatial_temporal/stream_img/data/
         phase: trainval
     validation:
       target: STDiff.dataset_wlbl.ImageNetVidDataset
       params:
         batch_size: 1
         len_seq: 1
-        path: /home/nkalanat/sensei-fs-3-link/data/fpe-westbrook/
-        path_weather: /home/nkalanat/sensei-fs-3-link/data/
+        path: /data/nak168/spatial_temporal/stream_img/data/fpe-westbrook/
+        path_weather: /data/nak168/spatial_temporal/stream_img/data/
         phase: test
     test:
       target: STDiff.dataset_wlbl.ImageNetVidDataset
       params:
         batch_size: 1
         len_seq: 1
-        path: /home/nkalanat/sensei-fs-3-link/data/fpe-westbrook/
-        path_weather: /home/nkalanat/sensei-fs-3-link/data/
+        path: /data/nak168/spatial_temporal/stream_img/data/fpe-westbrook/
+        path_weather: /data/nak168/spatial_temporal/stream_img/data/
         phase: test
 
 

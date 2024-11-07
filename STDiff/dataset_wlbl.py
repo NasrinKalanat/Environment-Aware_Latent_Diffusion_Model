@@ -82,8 +82,7 @@ class ImageNetVidDataset(torch.utils.data.Dataset):
     fol_list = os.listdir(path)
     fol_name = ""
     if phase == "test":
-      fol_name = "Avery Brook_River Right_01171000"
-      # fol_list = ["Avery Brook_Bridge_01171000"]
+      fol_list = ["Avery Brook_Bridge_01171000"]
       # fol_list = ["West Brook Upper_01171030"]
       # fol_list = ["West Brook Lower_01171090"]
       # fol_list = ["Avery Brook_River Left_01171000"]
@@ -97,7 +96,6 @@ class ImageNetVidDataset(torch.utils.data.Dataset):
         # load
         images, temps, dates, weather, weather_label, w_stat = self.load_data(path, fol)
         weather_stat.append(w_stat)
-        print(fol,path)
 
         # sort
         images, temps, dates, weather, weather_label = self.sort_data(images, temps, dates, weather, weather_label)
@@ -137,8 +135,8 @@ class ImageNetVidDataset(torch.utils.data.Dataset):
           self.weather.append(weather)
           self.weather_label.append(weather_label)
           print(fol, phase)
-          print(pd.to_datetime(np.min(dates), unit='s'), pd.to_datetime(np.max(dates), unit='s'))
-          print(np.min(labels), np.max(labels))
+          # print(pd.to_datetime(np.min(dates), unit='s'), pd.to_datetime(np.max(dates), unit='s'))
+          # print(np.min(labels), np.max(labels))
           print(len(images))
 
     weather_stat = pd.concat(weather_stat, ignore_index=True)
