@@ -1,18 +1,18 @@
-# Spatial Temporal Latent Diffusion Models
+# Environment-Aware Latent Diffusion Models
 
 
   
 ## Requirements
-A suitable [conda](https://conda.io/) environment named `stldm` can be created
+A suitable [conda](https://conda.io/) environment named `ealdm` can be created
 and activated with:
 
 ```
 conda env create -f environment.yaml
-conda activate stldm
+conda activate ealdm
 ```
 
 
-# Train your own STLDMs
+# Train your own EALDMs
 
 
 ## Model Training
@@ -32,7 +32,7 @@ where `config_spec` is one of {`autoencoder_kl_8x8x64`(f=32, d=64), `autoencoder
 For training VQ-regularized models, see the [taming-transformers](https://github.com/CompVis/taming-transformers) 
 repository.
 
-### Training STLDMs 
+### Training EALDMs 
 
 In ``configs/latent-diffusion/`` we provide configs. 
 Training can be started by running
