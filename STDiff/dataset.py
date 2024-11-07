@@ -56,7 +56,7 @@ def download_image(url, file_path, file_name=""):
 class ImageNetVidDataset(torch.utils.data.Dataset):
 
     def __init__(self, image_size=256, batch_size=2, len_seq=8, path="", path_weather="", path_scaler="", phase="train",
-                 transform=None, mask_frac=0):
+                 transform=None, mask_frac=-1):
 
         self.phase = phase
         self.batch_size = batch_size
@@ -360,7 +360,9 @@ class ImageNetVidDataset(torch.utils.data.Dataset):
         return train_x, train_y, train_d
 
     def data_split(self, t_x, t_y, t_d, weather, phase, mask_frac):
-        if phase == "pretrain":
+        random_indices = np.random.choice(np.range(t_y.shape[0]), size=int(t_y.shape[0] * mask_frac), replace=False)
+        rem_indices = np.setdiff1d(np.range(t_y.shape[0]), random_indices)
+        if phase == "trainval":
             train_x1 = t_x[:round(t_x.shape[0] * 0.375)]
             train_y1 = t_y[:round(t_y.shape[0] * 0.375)]
             train_d1 = t_d[:round(t_d.shape[0] * 0.375)]
@@ -389,26 +391,19 @@ class ImageNetVidDataset(torch.utils.data.Dataset):
             labels = np.concatenate((train_y1, train_y2), axis=0)
             dates = np.concatenate((train_d1, train_d2), axis=0)
             weather = np.concatenate((train_w1, train_w2), axis=0)
-
-            if mask_frac == -1:
-                # mask sequentially
-                labels[:round(t_y.shape[0] * 0.375), :, :] = [None]
-            else:
-                # mask randomly
-                random_indices = np.random.choice(labels.size, size=int(labels.size * mask_frac), replace=False)
-                row_indices, col_indices = random_indices // labels.shape[1], random_indices % labels.shape[1]
-                labels[row_indices, col_indices, :] = [None]
-
+                
         elif phase == "val":
             imgs = t_x[round(t_x.shape[0] * 0.675):round(t_x.shape[0] * 0.875)]
             labels = t_y[round(t_y.shape[0] * 0.675):round(t_x.shape[0] * 0.875)]
             dates = t_d[round(t_d.shape[0] * 0.675):round(t_x.shape[0] * 0.875)]
             weather = weather[round(weather.shape[0] * 0.675):round(weather.shape[0] * 0.875)]
+
         else:
             imgs = t_x[round(t_x.shape[0] * 0.375):round(t_x.shape[0] * 0.675)]
             labels = t_y[round(t_y.shape[0] * 0.375):round(t_x.shape[0] * 0.675)]
             dates = t_d[round(t_d.shape[0] * 0.375):round(t_x.shape[0] * 0.675)]
             weather = weather[round(weather.shape[0] * 0.375):round(weather.shape[0] * 0.675)]
+
         return imgs, labels, dates, weather
 
     def __getitem__(self, id):
@@ -442,6 +437,9 @@ class ImageNetVidDataset(torch.utils.data.Dataset):
         t_X = t[:-1]
         label_X = lbl[:-1]
         weather_X = w[:-1]
+        if self.l_seq==1:
+            return {"img": images_nxt.squeeze(0), "mixed": (images_X.squeeze(0), label_X.reshape(self.batch_size, self.len_seq, -1).squeeze(0),
+                                                 weather_X.reshape(self.batch_size, self.len_seq, -1).squeeze(0), t_nxt.squeeze(0))}
         return {"img": images_nxt, "mixed": (images_X, label_X.reshape(self.batch_size, self.len_seq, -1),
                                              weather_X.reshape(self.batch_size, self.len_seq, -1), t_nxt)}
 

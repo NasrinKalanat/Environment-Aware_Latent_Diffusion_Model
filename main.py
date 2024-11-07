@@ -22,6 +22,8 @@ from ldm.util import instantiate_from_config
 
 import joblib
 from torchmetrics import FID
+from STDiff.third_stage_model import ThirdStageModel
+from ldm.models.diffusion.ddpm import LatentDiffusion
 
 def get_parser(**parser_kwargs):
     def str2bool(v):
@@ -352,40 +354,15 @@ class ImageLogger(Callback):
                 pl_module.eval()
 
             with torch.no_grad():
-                images = pl_module.log_images(batch, split=split, **self.log_images_kwargs)
-
-            fid = FID().cuda(device=torch.cuda.current_device())
-            fid.update(((images["inputs"]+ 1.0) / 2.0 * 255).type(torch.uint8), real=True)
-            fid.update(((images["samples_x0_quantized"]+ 1.0) / 2.0 * 255).type(torch.uint8), real=False)
-            pl_module.logger.experiment.add_scalar(
-                f'{split}/fid_samples_quantized', fid.compute(),
-                global_step=pl_module.global_step)
-
-            fid = FID().cuda(device=torch.cuda.current_device())
-            fid.update(((images["inputs"]+ 1.0) / 2.0 * 255).type(torch.uint8), real=True)
-            fid.update(((images["samples"]+ 1.0) / 2.0 * 255).type(torch.uint8), real=False)
-            pl_module.logger.experiment.add_scalar(
-                f'{split}/fid_samples', fid.compute(),
-                global_step=pl_module.global_step)
-
-            # from torchmetrics.functional.multimodal import clip_score
-            # from functools import partial
-
-            # clip_score_fn = partial(clip_score, model_name_or_path="openai/clip-vit-base-patch16")
-
-            # def calculate_clip_score(images, prompts):
-            #     images_int = (images * 255).astype("uint8")
-            #     clip_score = clip_score_fn(torch.from_numpy(images_int).permute(0, 3, 1, 2), prompts).detach()
-            #     return round(float(clip_score), 4)
-
-            # sd_clip_score = calculate_clip_score(images, prompts)
+                images = pl_module.log_images(batch, split=split, inpaint=False, plot_denoise_rows=False, plot_progressive_rows=False,
+                   plot_diffusion_rows=False, **self.log_images_kwargs)
 
             for k in images:
                 N = min(images[k].shape[0], self.max_images)
                 images[k] = images[k][:N]
                 if isinstance(images[k], torch.Tensor):
                     images[k] = images[k].detach().cpu()
-                    if self.clamp:
+                    if self.clamp and k!="diff_samples":
                         images[k] = torch.clamp(images[k], -1., 1.)
 
             self.log_local(pl_module.logger.save_dir, split, images,
@@ -396,23 +373,43 @@ class ImageLogger(Callback):
                 pl_module.global_step,
                 pl_module.current_epoch,
                 batch_idx)
-            lbl_val=batch["mixed"][1].detach().cpu().numpy()
-            w_val=batch["mixed"][2].detach().cpu().numpy()
-            t_val=batch["mixed"][3].detach().cpu().numpy()
-            lbl_val=lbl_val.reshape((lbl_val.shape[0]*lbl_val.shape[1]*lbl_val.shape[2],-1))
-            w_val=w_val.reshape((w_val.shape[0]*w_val.shape[1]*w_val.shape[2],-1))
-            t_val=t_val.reshape((t_val.shape[0]*t_val.shape[1],-1))
-            phase="val" if split!="train" else "train"
-            path_scaler=""
-            lbl_scaler=joblib.load(os.path.join(path_scaler, "flow_scaler_"+phase))
-            w_scaler=joblib.load(os.path.join(path_scaler, "weather_scaler_"+phase))
-            t_scaler=joblib.load(os.path.join(path_scaler, "time_scaler_"+phase))
-            t_val=t_scaler.inverse_transform(t_val).flatten()
-            time_list=[np.datetime64(int(cur), "s") for cur in t_val]
-            with open(os.path.join(root,filename),"w") as f:
+            lbl_val = batch["mixed"][1].detach().cpu().numpy()
+            w_val = batch["mixed"][2].detach().cpu().numpy()
+            t_val = batch["mixed"][3].detach().cpu().numpy()
+            if len(lbl_val.shape)==3:
+                lbl_val = lbl_val.reshape((lbl_val.shape[0] * lbl_val.shape[1], -1))
+                w_val = w_val.reshape((w_val.shape[0] * w_val.shape[1], -1))
+                t_val = t_val.reshape((t_val.shape[0], -1))
+            else:
+                lbl_val = lbl_val.reshape((lbl_val.shape[0] * lbl_val.shape[1] * lbl_val.shape[2], -1))
+                w_val = w_val.reshape((w_val.shape[0] * w_val.shape[1] * w_val.shape[2], -1))
+                t_val = t_val.reshape((t_val.shape[0] * t_val.shape[1], -1))
+            phase = "val" if split != "train" else "train"
+            path_scaler = ""
+            lbl_scaler = joblib.load(os.path.join(path_scaler, "flow_scaler_" + phase))
+            w_scaler = joblib.load(os.path.join(path_scaler, "weather_scaler_" + phase))
+            t_scaler = joblib.load(os.path.join(path_scaler, "time_scaler_" + phase))
+            t_val = t_scaler.inverse_transform(t_val).flatten()
+            time_list = [np.datetime64(int(cur), "s") for cur in t_val]
+            with open(os.path.join(root, filename), "w") as f:
                 f.write("label:{}\n".format(lbl_scaler.inverse_transform(lbl_val)))
                 f.write("weather:{}\n".format(w_scaler.inverse_transform(w_val)))
                 f.write("time:{}\n".format(time_list))
+
+            # fid = FID().cuda(device=torch.cuda.current_device())
+            # fid.update(((images["inputs"] + 1.0) / 2.0 * 255).type(torch.uint8).cuda(device=torch.cuda.current_device()), real=True)
+            # fid.update(((images["samples_x0_quantized"] + 1.0) / 2.0 * 255).type(torch.uint8).cuda(device=torch.cuda.current_device()), real=False)
+            # pl_module.logger.experiment.add_scalar(
+            #     f'{split}/fid_samples_quantized', fid.compute(),
+            #     global_step=pl_module.global_step)
+            #
+            # fid = FID().cuda(device=torch.cuda.current_device())
+            # fid.update(((images["inputs"] + 1.0) / 2.0 * 255).type(torch.uint8).cuda(device=torch.cuda.current_device()), real=True)
+            # fid.update(((images["samples"] + 1.0) / 2.0 * 255).type(torch.uint8).cuda(device=torch.cuda.current_device()), real=False)
+            # pl_module.logger.experiment.add_scalar(
+            #     f'{split}/fid_samples', fid.compute(),
+            #     global_step=pl_module.global_step)
+
 
             logger_log_images = self.logger_log_images.get(logger, lambda *args, **kwargs: None)
             logger_log_images(pl_module, images, pl_module.global_step, split)
@@ -423,7 +420,7 @@ class ImageLogger(Callback):
     def check_frequency(self, check_idx):
         if ((check_idx % self.batch_freq) == 0 or (check_idx in self.log_steps)) and (
                 check_idx > 0 or self.log_first_step):
-            try: 
+            try:
                 self.log_steps.pop(0)
             except IndexError as e:
                 print(e)
@@ -442,12 +439,8 @@ class ImageLogger(Callback):
             if (pl_module.calibrate_grad_norm and batch_idx % 25 == 0) and batch_idx > 0:
                 self.log_gradients(trainer, pl_module, batch_idx=batch_idx)
 
-    # def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx):
-    #     print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@","valend")
-    #     # if not self.disabled and pl_module.global_step > 0:
-    #     print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@","valendlog")
-    #     self.log_img(pl_module, batch, batch_idx, split="val")
-    #     print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@","valendlog")
+    # def on_test_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx):
+    #     self.log_img(pl_module, batch, batch_idx, split='test')
     #     if hasattr(pl_module, 'calibrate_grad_norm'):
     #         if (pl_module.calibrate_grad_norm and batch_idx % 25 == 0) and batch_idx > 0:
     #             self.log_gradients(trainer, pl_module, batch_idx=batch_idx)
@@ -529,6 +522,8 @@ if __name__ == "__main__":
     parser = Trainer.add_argparse_args(parser)
 
     opt, unknown = parser.parse_known_args()
+    device = f'cuda:{opt.gpus[0]}'
+    print("gpu device:", device)
     if opt.name and opt.resume:
         raise ValueError(
             "-n/--name and -r/--resume cannot be specified both."
@@ -777,15 +772,88 @@ if __name__ == "__main__":
         # run
         if opt.train:
             try:
+                print("**************start training**************")
                 trainer.fit(model, data)
             except Exception:
                 melk()
                 raise
-        if not opt.no_test and not trainer.interrupted:
-            trainer.test(model, data)
-        # print("**************start testing**************")
-        # # trainer.test(model, data)
-        # # trainer.test(model, data, ckpt_path="/data/nak168/spatial_temporal/stream_img/latent-diffusion/logs/2023-12-11T17-12-13_stdiff_weather/checkpoints/last.ckpt")
+        # if not opt.no_test and not trainer.interrupted:
+        #     trainer.test(model, data)
+
+        model = LatentDiffusion.load_from_checkpoint(os.path.join(ckptdir, "last.ckpt"), **config.model.get("params", dict()))
+        model = model.to(device)
+        if not os.path.exists(os.path.join(logdir, "third_stage_data_ar")):
+            print("**************third_stage_data**************")
+            image_logger = ImageLogger(**default_callbacks_cfg['image_logger']['params'])
+            cur = "third_stage_data_ar"
+            loader_dct={"test":data.test_dataloader()}
+            # loader_dct={"train":data.train_dataloader(), "test":data.test_dataloader()}
+            for split, loader in loader_dct.items():
+                split = cur+"/"+split
+                for batch_idx, batch in enumerate(loader):
+                    model.eval()
+                    with torch.no_grad():
+                        images = model.log_images(batch, split=split, inpaint=False, plot_denoise_rows=False, plot_progressive_rows=False,plot_diffusion_rows=False, **image_logger.log_images_kwargs)
+
+                    for k in images:
+                        N = images[k].shape[0]
+                        images[k] = images[k][:N]
+                        if isinstance(images[k], torch.Tensor):
+                            images[k] = images[k].detach().cpu()
+                            if image_logger.clamp and k != "diff_samples":
+                                images[k] = torch.clamp(images[k], -1., 1.)
+
+                    image_logger.log_local(logdir, split, images, model.global_step, model.current_epoch, batch_idx)
+
+                    root = os.path.join(logdir, split)
+                    os.makedirs(root, exist_ok=True)
+                    img = batch["img"].detach().cpu().squeeze(0)
+                    lbl_nxt = batch["mixed"][4].detach().cpu().squeeze(0)
+                    wlbl_nxt = batch["mixed"][5].detach().cpu().squeeze(0)
+                    id = batch["mixed"][6].detach().cpu().squeeze(0)
+
+                    lbl = batch["mixed"][1].detach().cpu().squeeze(0)
+                    w = batch["mixed"][2].detach().cpu().squeeze(0)
+                    t = batch["mixed"][3].detach().cpu().squeeze(0)
+                    for i in range(images["inputs"].shape[0]):
+                        filename = "batch-{:06}_instance-{:06}.csv".format(batch_idx, i)
+                        torch.save({"img":img[i], "latent":images["diff_samples"][i], "w":w[i], "wlabel_nxt":wlbl_nxt[i], "flabel":lbl[i], "flabel_nxt":lbl_nxt[i],"t":t[i]}, os.path.join(root, filename))
+                        # with open(os.path.join(root, filename), "w") as f:
+                        #     f.write("img:{}, latent:{}, label:{}".format(img_val, images["diff_samples"], wlbl_val))
+
+
+                    root = os.path.join(logdir, "images", split)
+                    filename = "condition_gs-{:06}_e-{:06}_b-{:06}.csv".format(
+                        model.global_step,
+                        model.current_epoch,
+                        batch_idx)
+                    lbl_val = batch["mixed"][1].detach().cpu().numpy()
+                    w_val = batch["mixed"][2].detach().cpu().numpy()
+                    t_val = batch["mixed"][3].detach().cpu().numpy()
+                    if len(lbl_val.shape)==3:
+                        lbl_val = lbl_val.reshape((lbl_val.shape[0] * lbl_val.shape[1], -1))
+                        w_val = w_val.reshape((w_val.shape[0] * w_val.shape[1], -1))
+                        t_val = t_val.reshape((t_val.shape[0], -1))
+                    else:
+                        lbl_val = lbl_val.reshape((lbl_val.shape[0] * lbl_val.shape[1] * lbl_val.shape[2], -1))
+                        w_val = w_val.reshape((w_val.shape[0] * w_val.shape[1] * w_val.shape[2], -1))
+                        t_val = t_val.reshape((t_val.shape[0] * t_val.shape[1], -1))
+                    phase = "val" if split != "train" else "train"
+                    path_scaler = ""
+                    lbl_scaler = joblib.load(os.path.join(path_scaler, "flow_scaler_" + phase))
+                    w_scaler = joblib.load(os.path.join(path_scaler, "weather_scaler_" + phase))
+                    t_scaler = joblib.load(os.path.join(path_scaler, "time_scaler_" + phase))
+                    t_val = t_scaler.inverse_transform(t_val).flatten()
+                    time_list = [np.datetime64(int(cur), "s") for cur in t_val]
+                    with open(os.path.join(root, filename), "w") as f:
+                        f.write("label:{}\n".format(lbl_scaler.inverse_transform(lbl_val)))
+                        f.write("weather:{}\n".format(w_scaler.inverse_transform(w_val)))
+                        f.write("time:{}\n".format(time_list))
+
+
+
+        ThirdStageModel(model).run(logdir)
+
         # trainer.validate(model,data)
     except Exception:
         if opt.debug and trainer.global_rank == 0:

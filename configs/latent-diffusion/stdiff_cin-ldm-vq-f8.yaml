@@ -22,10 +22,6 @@ model:
         out_channels: 4
         model_channels: 256
         attention_resolutions:
-        #note: this isn\t actually the resolution but
-        # the downsampling factor, i.e. this corresnponds to
-        # attention on spatial resolution 8,16,32, as the
-        # spatial reolution of the latents is 32 for f8
         - 4
         - 2
         - 1
@@ -65,53 +61,54 @@ model:
     cond_stage_config:
       target: STDiff.models.UnetCond
       params:
-        device: cuda:1
+        device: cuda:3
         cond_args:
-            type: fourier
-            dequant: gauss
-            noise: 0
-            noise_f_int: 
-            - 
-            noise_f:
-            - 14.8
-            - 0
-            dims: 4
-            lr: 1
-            lin_lr: 0.01
-            f_manual:
-            - 100
-            include_lin: true
-            
+          type: fourier
+          dequant: gauss
+          noise: 0
+          noise_f_int:
+          - null
+          noise_f:
+          - 263.246328125
+          - 7.791666666666667
+          - 0
+          dims: 6
+          lr: 1
+          lin_lr: 0.01
+          f_manual:
+          - 1.839835728952772
+          - 672
+          include_lin: true
 data:
   target: main.DataModuleFromConfig
   params:
-    batch_size: 1
-    num_workers: 12
+    batch_size: 32
+    num_workers: 0
     wrap: false
     train:
-      target: STDiff.dataset.ImageNetVidDataset
+      target: STDiff.dataset_wlbl.ImageNetVidDataset
       params:
-        batch_size: 4
-        len_seq: 8
-        path: '/data/nak168/spatial_temporal/stream_img/data/fpe-westbrook/'
-        path_weather: '/data/nak168/spatial_temporal/stream_img/data/'
-        phase: "train"
+        batch_size: 1
+        len_seq: 1
+        path: /home/nkalanat/sensei-fs-3-link/data/fpe-westbrook/
+        path_weather: /home/nkalanat/sensei-fs-3-link/data/
+        phase: trainval
     validation:
-      target: STDiff.dataset.ImageNetVidDataset
+      target: STDiff.dataset_wlbl.ImageNetVidDataset
       params:
-        batch_size: 4
-        len_seq: 8
-        path: '/data/nak168/spatial_temporal/stream_img/data/fpe-westbrook/'
-        path_weather: '/data/nak168/spatial_temporal/stream_img/data/'
-        phase: "val"
+        batch_size: 1
+        len_seq: 1
+        path: /home/nkalanat/sensei-fs-3-link/data/fpe-westbrook/
+        path_weather: /home/nkalanat/sensei-fs-3-link/data/
+        phase: test
     test:
-      target: STDiff.dataset.ImageNetVidDataset
+      target: STDiff.dataset_wlbl.ImageNetVidDataset
       params:
-        batch_size: 4
-        len_seq: 8
-        path: '/data/nak168/spatial_temporal/stream_img/data/fpe-westbrook/'
-        path_weather: '/data/nak168/spatial_temporal/stream_img/data/'
-        phase: "test"
+        batch_size: 1
+        len_seq: 1
+        path: /home/nkalanat/sensei-fs-3-link/data/fpe-westbrook/
+        path_weather: /home/nkalanat/sensei-fs-3-link/data/
+        phase: test
 
 
 lightning:
@@ -119,9 +116,11 @@ lightning:
     image_logger:
       target: main.ImageLogger
       params:
-        batch_frequency: 2000
-        max_images: 8
+        batch_frequency: 5000
+        max_images: 32
         increase_log_steps: False
 
   trainer:
     benchmark: True
+
+

@@ -175,6 +175,7 @@ class DDIMSampler(object):
             c_in = torch.cat([unconditional_conditioning, c])
             e_t_uncond, e_t = self.model.apply_model(x_in, t_in, c_in).chunk(2)
             e_t = e_t_uncond + unconditional_guidance_scale * (e_t - e_t_uncond)
+            # e_t = (1 + unconditional_guidance_scale) * e_t - unconditional_guidance_scale * e_t_uncond
 
         if score_corrector is not None:
             assert self.model.parameterization == "eps"
